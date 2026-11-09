@@ -53,7 +53,7 @@ function deepMerge(target, source) {
 
 // Apply a parsed settings source over a fresh copy of the defaults.
 export function applySettings(parsedSource) {
-  // TODO: This is the fix point. This merge is unsafe in two ways:
+  // TODOne: This is the fix point. This merge is unsafe in two ways:
   //   1. It builds onto a plain {} whose prototype is Object.prototype, so a
   //      "__proto__" / "constructor" key writes through to the shared prototype.
   //   2. It has no key guard at any level, so flat AND nested payloads pollute.
