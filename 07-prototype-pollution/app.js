@@ -29,14 +29,25 @@ export function parseSettings(rawText) {
 // The naive recursive merge. There is NO key guard, so "__proto__",
 // "constructor", and "prototype" are treated like any other field — including
 // inside the recursion, which is how a nested payload reaches the prototype too.
+const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
 function deepMerge(target, source) {
   for (const key in source) {
-    if (isObject(target[key]) && isObject(source[key])) {
-      deepMerge(target[key], source[key]); // recurse with no guard
+    if (!Object.hasOwn(source, key) || BLOCKED_KEYS.has(key)) {
+      continue;
+    }
+
+    const value = source[key];
+    if (isObject(value)) {
+      if (!isObject(target[key])) {
+        target[key] = Object.create(null);
+      }
+      deepMerge(target[key], value);
     } else {
-      target[key] = source[key]; // __proto__ / constructor write through here
+      target[key] = value;
     }
   }
+
   return target;
 }
 
@@ -50,10 +61,8 @@ export function applySettings(parsedSource) {
   // "__proto__", "constructor", or "prototype" at EVERY recursion level; copy
   // only own keys with Object.hasOwn; and (optionally) strip dangerous keys at
   // parse time with a JSON.parse reviver in parseSettings above.
-  const target = {}; // plain object — prototype is Object.prototype
+  // plain object — prototype is Object.prototype
   // Seed with a shallow copy of the defaults so a real update merges over them.
-  for (const key in DEFAULT_SETTINGS) {
-    target[key] = DEFAULT_SETTINGS[key];
-  }
+  const target = deepMerge(Object.create(null), DEFAULT_SETTINGS);
   return deepMerge(target, parsedSource);
 }
