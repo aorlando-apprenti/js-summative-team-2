@@ -33,18 +33,41 @@ function renderCard(profile) {
   // (1) URL context.
   const link = document.createElement("a");
   link.textContent = profile.displayName; // text context — already safe
-  // TODO: Validate profile.website before it reaches a URL sink, then apply the
+  // COMPLETE: Validate profile.website before it reaches a URL sink, then apply the
   //       same defenses to the avatar (2) and contact button (3) below.
-  link.href = profile.website; // VULNERABLE: javascript: scheme executes on click
 
+  try {
+    const u = new URL(profile.website, document.baseURI);
+    if (["https:", "http:", "mailto:"].includes(u.protocol)) {
+      link.setAttribute("href", u.href);
+    } else {
+      console.warn("Website URL Rejected:", profile.website);
+    }
+  } catch {
+    console.warn("Website URL Invalid:", profile.website);
+  }
+  
   // (2) Attribute context.
   const avatarWrap = document.createElement("div");
-  avatarWrap.innerHTML = '<img src="' + profile.avatar + '">'; // VULNERABLE: breakout
+  const avatar = document.createElement("img");
+  try {
+    const u = new URL(profile.avatar, document.baseURI);
+    if (["https:", "http:"].includes(u.protocol)) {
+      avatar.setAttribute("src", u.href);
+    } else {
+      console.warn("Avatar URL Rejected:", profile.avatar);
+    }
+  } catch {
+    console.warn("Avatar URL Invalid:", profile.avatar);
+  }
+  avatarWrap.append(avatar);
 
   // (3) Event-handler context.
   const btn = document.createElement("button");
   btn.textContent = "Contact";
-  btn.setAttribute("onclick", profile.contactAction); // VULNERABLE: value compiled as code
+  btn.addEventListener("click" function() {
+    showContact(profile.contactAction);
+  });
 
   root.append(link, avatarWrap, btn);
 }

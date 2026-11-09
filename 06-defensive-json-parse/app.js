@@ -30,7 +30,17 @@ export function makeResponse(body) {
 export async function loadProfile(response) {
   // response.json() calls JSON.parse for you — and throws a SyntaxError on a
   // truncated or otherwise malformed body, with nothing here to catch it.
-  const data = await response.json();
+  const text = await response.text();
+  if (typeof text !== "string" || text.length === 0) {
+    return { ok: false, reason: "Invalid entry" };
+  }
+
+  let data;
+  try { 
+    data = JSON.parse(text);
+  }catch {
+    return { ok: false, reason: "Invalid JSON" };
+  }
 
   // TODO: This is the fix point. Right now the handler trusts the parsed shape:
   //   - it does not wrap the parse to convert a SyntaxError into a safe rejection
@@ -40,9 +50,45 @@ export async function loadProfile(response) {
   // Replace the blind property access below with: safeParse -> shape validation
   // (Object.hasOwn for keys, typeof / Array.isArray for types) -> bounds checks,
   // returning { ok: true, profile } or { ok: false, reason } and never throwing.
+  
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+    return { ok: false, reason: "Invalid response shape" };
+  }
+
+  if (!Object.hasOwn(data, "user")) {
+    return { ok: false, reason: "Missing user" };
+  }
+
+  const user = data.user;
+  if (typeof user !== "object" || user === null || Array.isArray(user)) {
+    return { ok: false, reason: "Invalid user shape" };
+  }
+
+  if (!Object.hasOwn(user, "id") ||
+      !Object.hasOwn(user, "name") ||
+      !Object.hasOwn(user, "roles")) {
+    return { ok: false, reason: "Missing user fields" };
+  }
+
+  if (typeof user.id !== "number" ||
+      typeof user.name !== "string" ||
+      !Array.isArray(user.roles)) {
+    return { ok: false, reason: "Invalid user field types" };
+  }
+
+  for (const r of user.roles) {
+    if (typeof r !== "string") {
+      return { ok: false, reason: "Invalid role type" };
+    }
+  }
+
+  if (user.name.length > 100) {
+    return { ok: false, reason: "Name exceeds 100 characters" };
+  }
+
   const profile = {
-    name: data.user.name,                 // throws when there is no `user` key
-    roles: data.user.roles.map((r) => r), // throws when `roles` is not an array
+    name: user.name,
+    roles: user.roles.map((r) => r),
   };
 
   // Even when this does not throw (e.g. wrong-types makes name === null and
