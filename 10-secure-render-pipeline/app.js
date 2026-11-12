@@ -18,7 +18,7 @@
 // control: a defensive parse, then a render that uses safe sinks.
 
 function parseStage(text) {
-  // TODO (parse boundary): this is the first defense point. Right now this does
+  // COMPLETE (parse boundary): this is the first defense point. Right now this does
   // a bare JSON.parse and trusts whatever comes back. Make it a DEFENSIVE PARSE:
   //   1. wrap JSON.parse in try/catch and return null on a SyntaxError
   //      (a malformed body is a rejection condition, not a crash);
@@ -29,11 +29,41 @@ function parseStage(text) {
   //   4. build the result with Object.create(null) and copy only the keys you
   //      validated, so a poisoned inherited property has nowhere to land.
   // Return the validated object, or null to fail closed.
-  return JSON.parse(text); // <-- throws on a bad body; trusts every shape/key
+
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+    return null;
+  }
+
+  if (!Object.hasOwn(data, "title") || typeof data.title !== "string" ||
+      !Object.hasOwn(data, "body") || typeof data.body !== "string" ||
+      !Object.hasOwn(data, "link") || typeof data.link !== "string" ||
+      !Object.hasOwn(data, "richText") || typeof data.richText !== "string") {
+    return null;
+  }
+
+  if (Object.hasOwn(data, "__proto__") ||
+      Object.hasOwn(data, "constructor") ||
+      Object.hasOwn(data, "prototype")) {
+    return null;
+  }
+
+  const article = Object.create(null);
+  article.title = data.title;
+  article.body = data.body;
+  article.link = data.link;
+  article.richText = data.richText;
+  return article;
 }
 
 function renderStage(data, root) {
-  // TODO (render boundary): this is the second defense point. A value that
+  // COMPLETE (render boundary): this is the second defense point. A value that
   // passed parse is NOT automatically safe to render — a well-typed string is
   // still a working script if it lands in a markup sink. Rebuild this so every
   // untrusted value reaches the DOM through a SAFE sink:
@@ -44,11 +74,31 @@ function renderStage(data, root) {
   //     DOMPurify.sanitize(...) and assign only the sanitized result.
   // The single line below is the canonical pipeline bug: it concatenates every
   // untrusted field into one HTML string and assigns it to innerHTML.
-  root.innerHTML =
-    "<h2>" + data.title + "</h2>" +
-    "<p>" + data.body + "</p>" +
-    '<a href="' + data.link + '">Read more</a>' +
-    "<div>" + data.richText + "</div>";
+
+  const title = document.createElement("h2");
+  title.textContent = data.title;
+
+  const body = document.createElement("p");
+  body.textContent = data.body;
+
+  const link = document.createElement("a");
+  link.textContent = "Read more";
+
+  try {
+    const u = new URL(data.link, document.baseURI);
+    if (["http:", "https:", "mailto:"].includes(u.protocol)) {
+      link.setAttribute("href", u.href);
+    }
+  } catch {
+  }
+  const rich = document.createElement("div");
+  rich.innerHTML = DOMPurify.sanitize(data.richText, {
+    ALLOWED_TAGS: ["p", "strong", "b", "i", "em"],
+    ALLOWED_ATTR: [],
+  });
+
+  root.replaceChildren();
+  root.append(title, body, link, rich);
 }
 
 // Shared application state the feature caches parsed responses into. A real app
@@ -73,12 +123,18 @@ function deepMerge(target, source) {
 // Orchestrator. A real version fetches the body first; the harness hands the
 // raw body text in directly so the lab stays network-free.
 function runPipeline(body, root) {
-  // TODO (orchestration): when the parse stage cannot validate a body it should
+  // COMPLETE (orchestration): when the parse stage cannot validate a body it should
   // return null, and this orchestrator should FAIL CLOSED — render a safe empty
   // state instead of any partial or unvalidated content. Right now it passes
   // whatever parseStage returned straight into render with no check, and the
   // deep-merge below trusts every key the parse stage let through.
+
   const data = parseStage(body);
+  if (data === null) {
+    root.replaceChildren();
+    return;
+  }  
+
   // Cache the parsed article into shared state via a deep merge. With no parse
   // guard, a "__proto__" key in `data` pollutes Object.prototype here.
   appState.lastArticle = deepMerge({}, data);
