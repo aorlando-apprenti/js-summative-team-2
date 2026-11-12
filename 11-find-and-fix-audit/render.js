@@ -18,7 +18,10 @@
 function renderSearch(term, el) {
   // SOURCE: location.search ?q=  (see app.js).  SINK: innerHTML.
   // The untrusted term is concatenated into markup and parsed as HTML.
-  el.innerHTML = "Showing results for: <strong>" + term + "</strong>";
+
+  const strong = document.createElement("strong");
+  strong.textContent = term;
+  el.replaceChildren("Showing results for: ", strong);
 }
 
 // Render one member card and append it to the list container.
@@ -34,20 +37,38 @@ function renderMember(member, listEl) {
   // Bio: rendered as HTML so light formatting shows. SINK: insertAdjacentHTML.
   // The stored bio is attacker-controllable (a saved profile field), so this is
   // a markup sink fed by persisted untrusted data.
-  card.insertAdjacentHTML("beforeend", "<p>" + member.bio + "</p>");
+  const bio = document.createElement("p");
+  bio.innerHTML = DOMPurify.sanitize(member.bio, {
+    ALLOWED_TAGS: ["em", "strong", "i", "b", "br"],
+    ALLOWED_ATTR: [],
+  });
+  card.appendChild(bio);
 
   // Profile link. SINK: href set from untrusted data with no scheme check, so a
   // "javascript:" value becomes executable when clicked.
   const link = document.createElement("a");
-  link.href = member.website;
   link.textContent = "Profile";
+
+  if (typeof member.website === "string" && member.website.trim()) {
+    try {
+      const url = new URL(member.website, document.baseURI);
+      if (url.protocol === "http:" || url.protocol === "https:") {
+        link.setAttribute("href", url.href);
+      }
+    } catch {
+      // Leave href unset if the URL cannot be parsed.
+    }
+  }
+
   card.appendChild(link);
 
   // "Say hi" button. SINK: an inline onclick string built from the member name,
   // so a name containing a quote-and-paren breakout injects code.
   const btn = document.createElement("button");
-  btn.setAttribute("onclick", "alert('hi ' + '" + member.name + "')");
   btn.textContent = "Say hi";
+  btn.addEventListener("click", () => {
+    alert("hi " + member.name);
+  });
   card.appendChild(btn);
 
   listEl.appendChild(card);
