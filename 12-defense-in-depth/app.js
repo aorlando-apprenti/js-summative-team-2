@@ -42,7 +42,7 @@ function deepMerge(target, source) {
 
 // ---- Parse: turn a comment response body into a comment object. ----
 function validateComment(text) {
-  // TODO (validation layer + object-handling layer): right now this parses and
+  // COMPLETE (validation layer + object-handling layer): right now this parses and
   // does ONE weak check (that the result is an object), then deep-merges the raw
   // parsed object onto the defaults with NO pollution guard. Make it a real
   // validation layer: wrap JSON.parse in try/catch (fail closed), confirm every
@@ -51,12 +51,39 @@ function validateComment(text) {
   // Then add the object-handling layer: reject the POLLUTION_KEYS with
   // Object.hasOwn BEFORE building the object, and build it with
   // Object.create(null), copying only the validated fields (drop deepMerge).
-  const raw = JSON.parse(text); // throws on a malformed body — nothing catches it
-  if (typeof raw !== "object" || raw === null) return null;
+
+  let raw;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return null;
+  }
+
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return null;
+  }
+
+  const fields = ["author", "timestamp", "text", "website", "richText"];
+  for (const key of fields) {
+    if (!Object.hasOwn(raw, key) || typeof raw[key] !== "string" ||
+        raw[key].length > MAX_LEN) {
+      return null;
+    }
+  }
+
+  for (const key of POLLUTION_KEYS) {
+    if (Object.hasOwn(raw, key)) {
+      return null;
+    }
+  }
 
   // No length check, no per-field type check, no pollution guard. The deep merge
   // of an untrusted object is a direct prototype-pollution vector.
-  return deepMerge({ ...COMMENT_DEFAULTS }, raw);
+  const c = Object.create(null);
+  for (const key of fields) {
+    c[key] = raw[key];
+  }
+  return c;
 }
 
 // Return an allowed href, or null. (Helper for the URL layer once you build it.)
@@ -74,31 +101,48 @@ function renderComment(c, root) {
   const card = document.createElement("div");
   card.className = "comment";
 
-  // TODO (safe-sink layer): author, timestamp, and text are plain values and
+  // COMPLETE (safe-sink layer): author, timestamp, and text are plain values and
   // should reach the DOM through textContent. Right now they are concatenated
   // into one HTML string and assigned to innerHTML — a markup sink that runs any
   // script the fields carry. Rebuild this with createElement + textContent.
-  card.innerHTML =
-    '<span class="author">' + c.author + "</span>" +
-    "<time>" + c.timestamp + "</time>" +
-    "<p>" + c.text + "</p>";
 
-  // TODO (URL layer): set the profile link with setAttribute only after a scheme
+  const author = document.createElement("span");
+  author.className = "author";
+  author.textContent = c.author;
+
+  const timestamp = document.createElement("time");
+  timestamp.textContent = c.timestamp;
+
+  const text = document.createElement("p");
+  text.textContent = c.text;
+
+  card.append(author, timestamp, text);
+
+  // COMPLETE (URL layer): set the profile link with setAttribute only after a scheme
   // allow-list check (use safeUrl above), and wire any click behavior with
   // addEventListener — never a raw href and never an inline on* attribute.
   const link = document.createElement("a");
-  link.href = c.website; // accepts javascript: and untrusted data: URLs
-  link.textContent = c.author;
-  link.setAttribute("onclick", "openProfile('" + c.author + "')"); // inline handler
-  card.appendChild(link);
+  const href = safeUrl(c.website);
+  if (href !== null) {
+    link.setAttribute("href", href);
+  }
 
-  // TODO (sanitization layer): the rich-text body is the ONE field that
+  link.textContent = c.author;
+  link.addEventListener("click", function() {
+    openProfile(c.author);
+  });
+  card.appendChild(link)
+
+  // COMPLETE (sanitization layer): the rich-text body is the ONE field that
   // genuinely carries HTML. Route it through DOMPurify.sanitize(...) and assign
   // only the sanitized result. Right now the raw value is assigned to innerHTML.
   const rich = document.createElement("div");
-  rich.innerHTML = c.richText; // raw untrusted HTML straight into a markup sink
+  rich.innerHTML = DOMPurify.sanitize(c.richText, {
+    ALLOWED_TAGS: ["p", "strong", "b", "i", "em"],
+    ALLOWED_ATTR: [],
+  });
+  
   card.appendChild(rich);
-
   root.append(card);
 }
 
